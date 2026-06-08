@@ -1,23 +1,23 @@
 import os
 import re
-import json
 import requests
-from http.server import BaseHTTPRequestHandler
+from flask import Flask, request, jsonify
 
-# Fetch Token from Vercel Environment Variables safely
+app = Flask(__name__)
+
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 API_ENDPOINT = "https://instagram-downloader.mn-bots.workers.dev/"
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 def process_message(chat_id, text):
-    """Parses text, fetches from extraction API, and sends files to Telegram synchronously."""
     match = re.search(r"(https?://(?:www\.)?instagram\.com/[^\s]+)", text)
     if not match:
         return
 
     instagram_url = match.group(1)
     
-    # 1. Send initial progress alert
+    # 1. Send status placeholder
+    status_msg_id = None
     try:
         status_res = requests.post(f"{TELEGRAM_API}/sendMessage", json={
             "chat_id": chat_id,
@@ -26,10 +26,10 @@ def process_message(chat_id, text):
         }).json()
         status_msg_id = status_res.get("result", {}).get("message_id")
     except Exception:
-        status_msg_id = None
+        pass
 
     try:
-        # 2. Extract media metadata from your worker backend
+        # 2. Query worker endpoint
         response = requests.get(API_ENDPOINT, params={"url": instagram_url}, timeout=30)
         data = response.json()
 
@@ -53,7 +53,7 @@ def process_message(chat_id, text):
             elif media_type == "image":
                 requests.post(f"{TELEGRAM_API}/sendPhoto", json={"chat_id": chat_id, "photo": media_url})
 
-        # 4. Remove tracking status placeholder
+        # 4. Delete progress status
         if status_msg_id:
             requests.post(f"{TELEGRAM_API}/deleteMessage", json={"chat_id": chat_id, "message_id": status_msg_id})
 
@@ -65,32 +65,26 @@ def process_message(chat_id, text):
                 "text": "❌ *An operational error occurred while transferring media.*"
             })
 
-class handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        """Processes the clean incoming JSON webhook transmission."""
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        
-        try:
-            payload = json.loads(post_data.decode('utf-8'))
-            if "message" in payload and "text" in payload["message"]:
-                chat_id = payload["message"]["chat"]["id"]
-                text = payload["message"]["text"]
-                
-                if text.startswith("/start"):
-                    requests.post(f"{TELEGRAM_API}/sendMessage", json={
-                        "chat_id": chat_id,
-                        "text": "👋 **Send me any public Instagram link and I'll extract it instantly!**",
-                        "parse_mode": "Markdown"
-                    })
-                else:
-                    process_message(chat_id, text)
-                    
-        except Exception as e:
-            print(f"Execution payload error: {e}")
+@app.route('/', methods=['POST'])
+def webhook():
+    payload = request.get_json(silent=True) or {}
+    
+    if "message" in payload:
+        message = payload["message"]
+        chat_id = message["chat"]["id"]
+        text = message.get("text", "")
 
-        # Instantly return 200 OK to keep the serverless pipeline flowing smoothly
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
+        if text.startswith("/start"):
+            requests.post(f"{TELEGRAM_API}/sendMessage", json={
+                "chat_id": chat_id,
+                "text": "👋 **Send me any public Instagram link and I'll extract it instantly!**",
+                "parse_mode": "Markdown"
+            })
+        elif text:
+            process_message(chat_id, text)
+
+    return jsonify({"status": "ok"}), 200
+
+@app.route('/', methods=['GET'])
+def index():
+    return "Bot is running fine!", 200
