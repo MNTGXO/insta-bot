@@ -36,7 +36,7 @@ def process_message(chat_id, text):
         if not data.get("success") or not data.get("media"):
             requests.post(f"{TELEGRAM_API}/sendMessage", json={
                 "chat_id": chat_id,
-                "text": "❌ *Error:* Could not extract media or content is private.report in @mnbots_support"
+                "text": "❌ *Error:* Could not extract media or content is private."
             })
             return
 
@@ -77,7 +77,7 @@ def webhook():
         if text.startswith("/start"):
             requests.post(f"{TELEGRAM_API}/sendMessage", json={
                 "chat_id": chat_id,
-                "text": "👋 **Send me any public Instagram link and I'll download it instantly!.Join @mnbots**",
+                "text": "👋 **Send me any public Instagram link and I'll extract it instantly!**",
                 "parse_mode": "Markdown"
             })
         elif text:
@@ -87,4 +87,4 @@ def webhook():
 
 @app.route('/', methods=['GET'])
 def index():
-    return "Bot is running fine! powered by mnbots", 200
+    return "Bot is running fine!", 200
